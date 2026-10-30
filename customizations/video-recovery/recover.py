@@ -160,16 +160,23 @@ class Native:
     def submit(self, asset_id, stage):
         self.api('/assets/jobs', {'name': STAGES[stage][1], 'assetIds': [asset_id]})
 
+    def libraries(self):
+        return self.api('/libraries')
 
-def recover(native, state, save, now, settle=120, max_jobs=1, dry_run=False):
+    def scan_library(self, ident):
+        self.api('/libraries/' + ident + '/scan', {})
+
+
+def recover(native, state, save, now, settle=120, max_jobs=1, dry_run=False, scan_libraries=False):
     reasons = native.safety()
     if reasons:
         return {'at': now, 'submitted': [], 'planned': [], 'states': {'blocked_resource': 1},
                 'blocked': reasons}
     queues = native.queues()
     # 不能只限制单个队列：元数据、缩略图和转码共享 CPU、内存及磁盘。
-    if any(any(queues[q]['jobCounts'].get(k, 0) for k in ('active', 'waiting', 'delayed', 'paused'))
-           for q, _ in STAGES.values()):
+    observed_queues = [q for q, _ in STAGES.values()] + ['library', 'sidecar']
+    if any(any(queues.get(q, {}).get('jobCounts', {}).get(k, 0)
+               for k in ('active', 'waiting', 'delayed', 'paused')) for q in observed_queues):
         return {'at': now, 'submitted': [], 'planned': [], 'states': {'waiting_media_pipeline': 1}}
     assets = native.assets()
     records = state.setdefault('assets', {})
@@ -247,6 +254,18 @@ def recover(native, state, save, now, settle=120, max_jobs=1, dry_run=False):
             native.submit(asset['id'], stage)
             counts['waiting'] = counts.get('waiting', 0) + 1
         actions.append({'id': asset['id'], 'name': asset['name'], 'stage': stage})
+    if scan_libraries and not actions and not any(
+            queues.get(q, {}).get('queueStatus', {}).get('isPaused') for q in observed_queues):
+        scans = state.setdefault('libraryLastScan', {})
+        for library in native.libraries():
+            if now - scans.get(library['id'], 0) < 900:
+                continue
+            if not dry_run:
+                scans[library['id']] = now
+                save(state)
+                native.scan_library(library['id'])
+            actions.append({'id': library['id'], 'name': library['name'], 'stage': 'library_scan'})
+            break
     state['lastRunAt'] = now
     summary = {}
     for record in records.values():
@@ -266,6 +285,7 @@ def main():
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--status', action='store_true')
     parser.add_argument('--retry', help='重新检查指定失败资产；不改变原片或资产可见性')
+    parser.add_argument('--scan-libraries', action='store_true', help='空闲时每个外部库最多每 15 分钟扫描一次')
     args = parser.parse_args()
     folder = Path(args.state_dir)
     folder.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -289,7 +309,8 @@ def main():
             print(json.dumps({'paused': True, 'submitted': [], 'states': {'paused': 1}}))
             return
         result = recover(Native(), state, lambda value: atomic_json(path, value), time.time(),
-                         settle=args.settle_seconds, max_jobs=args.max_jobs, dry_run=args.dry_run)
+                         settle=args.settle_seconds, max_jobs=args.max_jobs, dry_run=args.dry_run,
+                         scan_libraries=args.scan_libraries)
         if not args.dry_run:
             atomic_json(folder / 'summary.json', result)
         print(json.dumps(result, ensure_ascii=False))

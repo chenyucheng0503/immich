@@ -41,6 +41,8 @@ class Fake:
     def probe(self, _): return {'valid': self.valid, 'reason': 'no video stream'}
     def required_video(self, _): return self.required
     def submit(self, ident, stage): self.sent.append((ident, stage))
+    def libraries(self): return [{'id': 'library-one', 'name': 'Library'}]
+    def scan_library(self, ident): self.sent.append((ident, 'library_scan'))
 
 
 class RecoveryTests(unittest.TestCase):
@@ -158,6 +160,26 @@ class RecoveryTests(unittest.TestCase):
         a = asset(id='two'); complete_metadata(a)
         f = Fake([asset(), a]); self.run_once(f, max_jobs=20)
         self.assertEqual(f.sent, [('one', 'metadata')])
+
+    def test_library_discovery_is_rate_limited_and_persistent(self):
+        f = Fake([])
+        self.run_once(f, now=10_000, scan_libraries=True)
+        self.run_once(f, now=10_899, scan_libraries=True)
+        self.assertEqual(len(f.sent), 1)
+        self.state = copy.deepcopy(self.saves[-1])
+        self.run_once(f, now=10_901, scan_libraries=True)
+        self.assertEqual(len(f.sent), 2)
+
+    def test_library_scan_respects_empty_but_paused_media_queue(self):
+        f = Fake([]); f.q['videoConversion']['queueStatus']['isPaused'] = True
+        self.run_once(f, scan_libraries=True)
+        self.assertFalse(f.sent)
+
+    def test_busy_library_does_not_overlap_recovery(self):
+        f = Fake([asset()])
+        f.q['library'] = {'queueStatus': {'isPaused': False}, 'jobCounts': {'active': 1}}
+        self.run_once(f, scan_libraries=True)
+        self.assertFalse(f.sent)
 
 
 if __name__ == '__main__':
