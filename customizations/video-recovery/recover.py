@@ -83,7 +83,7 @@ def has_video_stream(probe):
     return False
 
 
-def quarantine_corrupt_cache(root, asset_id):
+def quarantine_corrupt_cache(root, asset_id, dry_run=False):
     if str(uuid.UUID(asset_id)) != asset_id.lower():
         raise ValueError('无效的资产 ID')
     preserved = []
@@ -99,6 +99,9 @@ def quarantine_corrupt_cache(root, asset_id):
             current = path.stat()
             if (current.st_ino, current.st_size, current.st_mtime_ns) != (
                     before.st_ino, before.st_size, before.st_mtime_ns):
+                continue
+            if dry_run:
+                preserved.append(str(path))
                 continue
             backup = path.with_name(name + '.corrupt-' + str(time.time_ns()))
             os.replace(path, backup)
@@ -189,6 +192,9 @@ class Native:
         return {'valid': True}
 
     def required_video(self, asset):
+        if quarantine_corrupt_cache(self.log_root, asset['id'], dry_run=True):
+            # 缓存损坏时先进入可恢复任务；提交时隔离，原生任务再决定是否编码。
+            return True
         program = Path(__file__).with_name('decision.cjs').read_text()
         return self.command(['docker', 'exec', '-i', '-w', '/usr/src/app/server', 'immich_server',
                              'node', '-e', program], input=json.dumps({'asset': asset, 'config': self.config}),

@@ -75,6 +75,10 @@ class RecoveryTests(unittest.TestCase):
             (folder / 'detection.json').write_text('')
             (folder / 'video.json').write_text('{"revision":"valid"}')
             (folder / 'override.json').write_text('{broken')
+            self.assertEqual(quarantine_corrupt_cache(root, ident, dry_run=True),
+                             [str(folder / 'detection.json')])
+            self.assertTrue((folder / 'detection.json').exists())
+            self.assertFalse(list(folder.glob('*.corrupt-*')))
             backups = quarantine_corrupt_cache(root, ident)
             self.assertEqual(len(backups), 1)
             self.assertEqual(Path(backups[0]).read_bytes(), b'')
