@@ -45,6 +45,7 @@ describe('Log 预览识别与 LUT 校验', () => {
   });
   it('验证 3D LUT 的尺寸、完整数据、有限数值，同时允许 Sony 超白输出', () => {
     expect(parseCube(cube)).toMatchObject({ size: 2, entries: 8 });
+    expect(parseCube(cube.replace('LUT_3D_SIZE 2', 'LUT_3D_SIZE\t2'))).toMatchObject({ size: 2, entries: 8 });
     expect(parseCube(cube.replace('1 1 1', '1.094749 1.094749 1.094749')).entries).toBe(8);
     expect(() => parseCube(cube + '\n0 0 0')).toThrow('过多');
     expect(() => parseCube(cube.replace('1 1 1', 'NaN 1 1'))).toThrow('无效');

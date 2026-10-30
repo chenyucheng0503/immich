@@ -18,21 +18,24 @@ export function parseCube(content: string) {
     if (!line) {
       continue;
     }
-    if (line.startsWith('TITLE ')) {
-      title = line.slice(6).replaceAll(/^"|"$/g, '');
+    const parts = line.split(/\s+/);
+    if (parts[0] === 'TITLE') {
+      title = line.slice(5).trim().replaceAll(/^"|"$/g, '');
       continue;
     }
-    if (line.startsWith('LUT_3D_SIZE ')) {
+    if (parts[0] === 'LUT_3D_SIZE') {
       if (size || entries) {
         throw new Error('LUT_3D_SIZE 重复或顺序错误');
       }
-      size = Number(line.slice(12));
+      if (parts.length !== 2) {
+        throw new Error('LUT_3D_SIZE 格式无效');
+      }
+      size = Number(parts[1]);
       if (!Number.isSafeInteger(size) || size < 2 || size > 65) {
         throw new Error('只支持 2–65 格的 3D .cube');
       }
       continue;
     }
-    const parts = line.split(/\s+/);
     if (parts[0] === 'DOMAIN_MIN' || parts[0] === 'DOMAIN_MAX') {
       const values = parts.slice(1).map(Number);
       if (values.length !== 3 || values.some((v) => !Number.isFinite(v))) {
