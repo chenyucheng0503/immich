@@ -42,6 +42,12 @@ export class LogPreviewController {
     return this.service.inspect(id, auth);
   }
 
+  @Get('assets/:id/applied-lut')
+  @Authenticated({ permission: Permission.AdminConfigRead, admin: true })
+  appliedLut(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto) {
+    return this.service.getAppliedLut(id, auth);
+  }
+
   @Put('assets/:id')
   @Authenticated({ permission: Permission.AdminConfigUpdate, admin: true })
   override(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto, @Body() dto: LogPreviewOverrideDto) {

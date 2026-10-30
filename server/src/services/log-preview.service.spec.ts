@@ -3,6 +3,7 @@ import { AssetType, JobName } from 'src/enum';
 import { LogPlan } from 'src/repositories/log-preview.repository';
 import { LogPreviewService } from 'src/services/log-preview.service';
 import { AssetFactory } from 'test/factories/asset.factory';
+import { authStub } from 'test/fixtures/auth.stub';
 import { getForAsset } from 'test/mappers';
 import { makeStream, newTestService } from 'test/utils';
 
@@ -62,5 +63,53 @@ describe('Sony 存量回填', () => {
       { name: JobName.AssetEncodeVideo, data: { id: asset.id } },
       { name: JobName.AssetGenerateThumbnails, data: { id: asset.id } },
     ]);
+  });
+});
+
+function appliedSetup() {
+  const context = setup();
+  context.mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([context.asset.id]));
+  context.mocks.asset.getForVideo.mockResolvedValue({
+    originalPath: context.asset.originalPath,
+    encodedVideoPath: '/preview.mp4',
+  });
+  return context;
+}
+
+describe('已应用 LUT 的只读提示', () => {
+  it('返回生成预览时使用的 LUT，而非目前选择的配置', async () => {
+    const { sut, mocks, asset } = appliedSetup();
+    mocks.logPreview.getState.mockResolvedValue({
+      detection: plan.detection,
+      override: { mode: 'auto' },
+      video: { status: 'complete', lutId: 'rendered-lut', lutName: '实际还原 LUT' },
+      thumbnail: undefined,
+    });
+    await expect(sut.getAppliedLut(asset.id, authStub.admin)).resolves.toEqual({
+      lut: { id: 'rendered-lut', name: '实际还原 LUT' },
+    });
+    expect(mocks.logPreview.inspect).not.toHaveBeenCalled();
+    expect(mocks.logPreview.resolve).not.toHaveBeenCalled();
+  });
+
+  it.each(['queued', 'processing', 'failed', 'complete'])(
+    '不把 %s 状态的未完成/未套 LUT 预览误报为还原',
+    async (status) => {
+      const { sut, mocks, asset } = appliedSetup();
+      mocks.logPreview.getState.mockResolvedValue({
+        detection: plan.detection,
+        override: { mode: 'auto' },
+        video: status === 'complete' ? { status } : { status, lutId: 'planned-lut', lutName: '准备使用的 LUT' },
+        thumbnail: undefined,
+      });
+      await expect(sut.getAppliedLut(asset.id, authStub.admin)).resolves.toEqual({ lut: null });
+    },
+  );
+
+  it('没有播放代理时不显示旧的完成记录', async () => {
+    const { sut, mocks, asset } = appliedSetup();
+    mocks.asset.getForVideo.mockResolvedValue({ originalPath: asset.originalPath, encodedVideoPath: null });
+    await expect(sut.getAppliedLut(asset.id, authStub.admin)).resolves.toEqual({ lut: null });
+    expect(mocks.logPreview.getState).not.toHaveBeenCalled();
   });
 });

@@ -74,6 +74,23 @@ export class LogPreviewService extends BaseService {
     };
   }
 
+  async getAppliedLut(id: string, auth: AuthDto): Promise<{ lut: { id: string; name: string } | null }> {
+    await this.requireAccess({ auth, permission: Permission.AssetRead, ids: [id] });
+    const asset = await this.assetRepository.getForVideo(id);
+    if (!asset) {
+      throw new NotFoundException('视频不存在');
+    }
+    if (!asset.encodedVideoPath) {
+      return { lut: null };
+    }
+    // 详情提示只读取已生成预览的记录，不重新探测原片，也不使用计划中的 selectedLut。
+    const { video } = await this.logPreviewRepository.getState(id);
+    if (video?.status !== 'complete' || typeof video.lutId !== 'string' || typeof video.lutName !== 'string') {
+      return { lut: null };
+    }
+    return { lut: video.lutId && video.lutName.trim() ? { id: video.lutId, name: video.lutName } : null };
+  }
+
   async override(id: string, dto: LogPreviewOverrideDto, auth: AuthDto) {
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
     await this.getAsset(id);

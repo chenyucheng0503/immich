@@ -3,6 +3,7 @@
   import DetailPanelDate from '$lib/components/asset-viewer/DetailPanelDate.svelte';
   import DetailPanelDescription from '$lib/components/asset-viewer/DetailPanelDescription.svelte';
   import DetailPanelLocation from '$lib/components/asset-viewer/DetailPanelLocation.svelte';
+  import DetailPanelLut from '$lib/components/asset-viewer/DetailPanelLut.svelte';
   import DetailPanelRating from '$lib/components/asset-viewer/DetailPanelStarRating.svelte';
   import DetailPanelTags from '$lib/components/asset-viewer/DetailPanelTags.svelte';
   import { timeToLoadTheMap } from '$lib/constants';
@@ -155,11 +156,7 @@
     <DetailPanelPeople {asset} {isOwner} {previousRoute} />
 
     {#if asset.type === 'VIDEO' && authManager.authenticated && authManager.user.isAdmin}
-      <div class="px-4 py-2">
-        <Link href={`/admin/system-settings?logAsset=${asset.id}&isOpen=video-transcoding%20log-preview`}
-          >Log 预览还原：查看识别结果与单片设置</Link
-        >
-      </div>
+      <DetailPanelLut assetId={asset.id} />
     {/if}
     <div class="p-4">
       {#if asset.exifInfo}
