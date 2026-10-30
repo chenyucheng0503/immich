@@ -2,20 +2,87 @@
 // 原片只读；描述和旁车统一交给 Immich 写入。
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const run = promisify(execFile);
-const VERSION = 'sony-standard-v1';
+const VERSION = 'sony-looks-v2';
 const aliases = [
   ['ST', 'Standard'], ['PT', 'Portrait'], ['NT', 'Neutral'], ['VV', 'Vivid'],
   ['VV2', 'Vivid 2'], ['FL', 'Film'], ['IN', 'Instant'], ['SH', 'Soft Highkey'],
   ['BW', 'B&W', 'Black & White'], ['SE', 'Sepia'],
+  ['NC', 'Classic Neg.', 'Classic Neg', 'Classic Negative'],
+  ['CC', 'Classic Chrome'], ['NN', 'Nostalgic Neg.', 'Nostalgic Neg', 'Nostalgic Negative'],
+  ['GR负片', 'GR Negative Film'], ['GR正片', 'GR Positive Film'], ['Astia'],
 ];
 const normalize = (value) => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 const names = new Map(aliases.flatMap(([code, ...values]) => [code, ...values].map((v) => [normalize(v), code])));
 const lookCode = (value) => names.get(normalize(value)) ?? null;
 class Conflict extends Error {}
 class Skip extends Error {}
+const CUSTOM_CODES = new Set(['NC', 'CC', 'NN', 'GR负片', 'GR正片', 'Astia']);
+function customMarker(value) {
+  const match = /^(?:(\d+)|Unknown \((\d+)\))$/i.exec(String(value ?? '').trim());
+  const number = match ? Number(match[1] ?? match[2]) : NaN;
+  return Number.isInteger(number) && number >= 249 && number <= 254 ? number : null;
+}
+function cameraFingerprint(tags) {
+  const value = String(tags['Sony:InternalSerialNumber'] ?? '').trim();
+  if (!value || /^(?:0x)?0+$/i.test(value)) return null;
+  return crypto.createHash('sha256').update('Sony:InternalSerialNumber:' + value).digest('hex');
+}
+function captureInstant(tags) {
+  const match = /^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})$/.exec(tags['ExifIFD:DateTimeOriginal'] ?? '');
+  const offset = tags['ExifIFD:OffsetTimeOriginal'];
+  if (!match || !/^[+-](?:0\d|1[0-4]):[0-5]\d$/.test(offset ?? '')) return null;
+  const [, year, month, day, hour, minute, second] = match;
+  const date = year + '-' + month + '-' + day + 'T' + hour + ':' + minute + ':' + second;
+  const validation = new Date(date + 'Z');
+  if (!Number.isFinite(validation.getTime()) || validation.toISOString().slice(0, 19) !== date) return null;
+  const sub = tags['ExifIFD:SubSecTimeOriginal'];
+  const fraction = sub === undefined ? '' : '.' + (typeof sub === 'number' ? String(sub).padStart(3, '0') : String(sub));
+  if (fraction && !/^\.\d{1,9}$/.test(fraction)) return null;
+  const value = Date.parse(date + fraction + offset);
+  return Number.isFinite(value) ? value : null;
+}
+function validateProfiles(profiles) {
+  if (!Array.isArray(profiles)) throw new Error('custom_profiles_must_be_array');
+  for (const profile of profiles) {
+    if (!profile.id || !/^[a-f0-9]{64}$/.test(profile.cameraHash ?? '') ||
+        !Number.isFinite(Date.parse(profile.from)) ||
+        (profile.until != null && !(Date.parse(profile.until) > Date.parse(profile.from))) ||
+        !Array.isArray(profile.slots) || profile.slots.length !== 6 || !profile.slots.every((code) => CUSTOM_CODES.has(code))) {
+      throw new Error('invalid_custom_profile');
+    }
+  }
+  return profiles;
+}
+function resolveLook(tags, profiles = []) {
+  const raw = tags['Sony:CreativeStyle'];
+  const marker = customMarker(raw);
+  if (marker !== null) {
+    // 自订编号优先于重复标签中的 Standard，绝不回退成 ST。
+    const cameraHash = cameraFingerprint(tags);
+    const shot = captureInstant(tags);
+    if (!cameraHash || shot === null) throw new Skip('custom_identity_or_capture_time_missing');
+    const matches = profiles.filter((p) => p.cameraHash === cameraHash && shot >= Date.parse(p.from) &&
+      (p.until == null || shot < Date.parse(p.until)));
+    if (matches.length > 1) throw new Conflict('ambiguous_custom_profile');
+    if (matches.length === 0) throw new Skip('custom_profile_not_found');
+    const profile = matches[0];
+    return { code: profile.slots[marker - 249], marker, profileId: profile.id, captureAt: new Date(shot).toISOString() };
+  }
+  const code = lookCode(raw);
+  if (!code) throw new Skip('unknown_or_custom_look:' + String(raw ?? 'missing').slice(0, 80));
+  return { code };
+}
+function retryableCustomSkip(reason) {
+  if (String(reason).startsWith('custom_')) return true;
+  const prefix = 'unknown_or_custom_look:';
+  if (!String(reason).startsWith(prefix)) return false;
+  const raw = reason.slice(prefix.length);
+  return customMarker(raw) !== null || CUSTOM_CODES.has(lookCode(raw));
+}
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const description = (asset) => asset.exifInfo?.description ?? '';
 function mergeDescription(before, code) {
@@ -48,7 +115,9 @@ async function safePath(file, roots) {
 const sameFile = (a, b) => a.size === b.size && a.mtimeMs === b.mtimeMs && a.ino === b.ino;
 async function exif(file, executable) {
   const result = await run(executable, [
-    '-json', '-G1', '-s', '-Make', '-Model', '-Sony:CreativeStyle',
+    '-json', '-a', '-G1:4', '-s', '-Make', '-Model', '-Sony:CreativeStyle',
+    '-Sony:InternalSerialNumber', '-DateTimeOriginal', '-OffsetTimeOriginal', '-SubSecTimeOriginal',
+    '-IFD0:ImageDescription',
     '-XMP-dc:Description*', '-XMP-tiff:ImageDescription', file,
   ], { timeout: 60_000, maxBuffer: 2 * 1024 * 1024, encoding: 'utf8' });
   const tags = JSON.parse(result.stdout)[0];
@@ -88,8 +157,9 @@ async function snapshotXmp(file, roots, read) {
   return { base64: raw.toString('base64'), dc, tiff };
 }
 class Processor {
-  constructor({ api, roots, ownerId, read, saveIntent, delays = [150, 350, 750, 1500, 3000] }) {
+  constructor({ api, roots, ownerId, customProfiles = [], read, saveIntent, delays = [150, 350, 750, 1500, 3000] }) {
     Object.assign(this, { api, roots, ownerId, read, saveIntent, delays });
+    this.customProfiles = validateProfiles(customProfiles);
   }
   async process(job) {
     let asset = await this.api('GET', '/assets/' + job.id);
@@ -106,8 +176,8 @@ class Processor {
       const tags = await this.read(file);
       if (tags['IFD0:Model'] !== 'ILCE-7CM2' || !/^sony$/i.test(tags['IFD0:Make'] ?? '')) throw new Skip('original_camera_mismatch');
       const rawLook = tags['Sony:CreativeStyle'];
-      const code = lookCode(rawLook);
-      if (!code) throw new Skip('unknown_or_custom_look:' + String(rawLook ?? 'missing').slice(0, 80));
+      const resolved = resolveLook(tags, this.customProfiles);
+      const { code } = resolved;
       const target = mergeDescription(description(asset), code);
       const xmp = await sidecarPath(file);
       const previousXmp = await snapshotXmp(xmp, this.roots, this.read);
@@ -117,6 +187,7 @@ class Processor {
       intent = {
         file, stat: beforeStat, checksum: asset.checksum, old: description(asset), target, code,
         rawLook, xmp, previousXmp, ruleVersion: VERSION, preparedAt: new Date().toISOString(),
+        ...(resolved.profileId ? { profileId: resolved.profileId, marker: resolved.marker, captureAt: resolved.captureAt } : {}),
       };
       await this.saveIntent(job.id, intent);
     }
@@ -153,4 +224,4 @@ class Processor {
   }
 }
 module.exports = { VERSION, lookCode, mergeDescription, localDay, inScope, safePath, sameFile, exif, sidecarPath,
-  snapshotXmp, xmpFields, Processor, Conflict, Skip, sleep };
+  snapshotXmp, xmpFields, Processor, Conflict, Skip, sleep, customMarker, cameraFingerprint, captureInstant, validateProfiles, resolveLook, retryableCustomSkip };

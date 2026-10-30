@@ -4,7 +4,7 @@ const http = require('node:http');
 const crypto = require('node:crypto');
 const path = require('node:path');
 const { Store } = require('./store.cjs');
-const { Processor, Conflict, Skip, VERSION, exif, inScope, sleep } = require('./core.cjs');
+const { Processor, Conflict, Skip, VERSION, exif, inScope, sleep, validateProfiles, retryableCustomSkip } = require('./core.cjs');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 function config() {
@@ -13,6 +13,7 @@ function config() {
   value.exiftool ??= '/usr/src/app/server/node_modules/.pnpm/node_modules/.bin/exiftool';
   value.stateDir ??= '/state';
   if (!Number.isFinite(Date.parse(value.enabledAt))) throw new Error('enabled_at_required');
+  value.customProfiles = validateProfiles(value.customProfiles ?? []);
   return value;
 }
 function makeApi(cfg) {
@@ -50,7 +51,8 @@ function scanQuery(scan) {
 function log(event, details = {}) { console.log(JSON.stringify({ at: new Date().toISOString(), event, ...details })); }
 async function serve(cfg, store, api) {
   let stopping = false;
-  const processor = new Processor({ api, roots: cfg.roots, ownerId: cfg.ownerId, read: (file) => exif(file, cfg.exiftool),
+  const processor = new Processor({ api, roots: cfg.roots, ownerId: cfg.ownerId, customProfiles: cfg.customProfiles,
+    read: (file) => exif(file, cfg.exiftool),
     saveIntent: (id, intent) => store.saveIntent(id, intent) });
   const server = http.createServer(async (req, res) => {
     const send = (status, value) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)); };
@@ -149,6 +151,13 @@ async function main() {
       if (!UUID.test(arg ?? '')) throw new Error('invalid_asset_id');
       const result = store.db.prepare("UPDATE jobs SET state='pending',attempts=0,next=0 WHERE id=? AND state IN ('failed','retry')").run(arg);
       log('retry_queued', { assetId: arg, count: result.changes });
+    } else if (command === 'retry-custom') {
+      // 仅重试未发生写入的自订识别跳过项；done、人工冲突及其他跳过原因不变。
+      const rows = store.db.prepare("SELECT id,reason FROM jobs WHERE state='skipped' AND intent IS NULL").all();
+      const update = store.db.prepare("UPDATE jobs SET state='pending',attempts=0,next=0,reason=NULL WHERE id=? AND state='skipped' AND intent IS NULL");
+      let count = 0;
+      for (const row of rows) if (retryableCustomSkip(row.reason)) count += update.run(row.id).changes;
+      log('custom_retry_queued', { count });
     } else throw new Error('unknown_command');
   } finally { store.close(); }
 }

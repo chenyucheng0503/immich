@@ -4,9 +4,9 @@ Immich v3.2.4 原生工作流 → 本服务 → 读取原片 Sony MakerNotes →
 
 ## 行为
 
-- 仅处理 `IMAGE`、`ILCE-7CM2`，标准外观使用 ST/PT/NT/VV/VV2/FL/IN/SH/BW/SE。六个新增外观和未知标记跳过。
+- 仅处理 `IMAGE`、`ILCE-7CM2`，标准外观使用 ST/PT/NT/VV/VV2/FL/IN/SH/BW/SE。自订外观使用 NC、CC、NN、GR负片、GR正片、Astia，未知标记跳过。
 - 空描述写纯缩写；相同外观的旧全称转换为缩写；普通文案末尾追加独立缩写行；不同外观标签、磁盘与数据库冲突进入 conflict。
-- 读取原片与旁车，不自行写原片或 XMP，不修改 MakerNotes、Lightroom 配置。原片挂载只读，写入由 Immich 的 `asset.update` API 完成。
+- 常驻服务读取原片与旁车，不自行写原片或 XMP，不修改 MakerNotes、Lightroom 配置。原片挂载只读，写入由 Immich 的 `asset.update` API 完成。尚未入库的指定文件可单独使用下述 `prepare.cjs` 新建旁车。
 - 数据库成功而旁车未落盘不计完成。每张记录持久化原/目标描述、原旁车字节、源文件标识、外观值、规则版本和重试状态。
 - 已处理任务重复触发不重新覆盖用户后续描述。元数据未就绪、离线、写入延迟等退避重试，8 次后 failed；冲突不会自动重试。
 - 每 5 分钟增量补漏，分页和游标事务持久化。自动处理按入库时间；显式历史批次按 Immich `localDateTime` 的拍摄日期，结束日期不包含在内。
@@ -28,10 +28,23 @@ Immich v3.2.4 原生工作流 → 本服务 → 读取原片 Sony MakerNotes →
 | webhookSecret | 随机独立密钥 |
 | enabledAt | 明确的 UTC 开始时间，不能每次启动重设 |
 | roots | `["/data", "/extlib", "/extlib2"]` |
+| customProfiles | 可选，按机身和拍摄时间生效的自订槽位配置，缺失时保留标准外观处理 |
 
 私有配置和 state 目录由容器 UID 99、GID 100 读取/写入；配置权限 0600。独立 Compose 项目可放入 Unraid Compose Manager 的 `immich-sony-look` 项目，启用自动启动。容器没有宿主端口，不需要 Docker socket 或数据库密码；限制 0.5 CPU 和 512 MiB。
 
 工作流：触发器 `AssetMetadataExtraction`；依次执行 `immich-plugin-core#assetTypeFilter`（IMAGE）、`#assetExifFilter`（model 精确匹配 ILCE-7CM2）、`#webhook`。Webhook URL 为 `http://immich-sony-look:8787/webhook`，鉴权头 `x-sony-look-key`。仅持久化任务后返回 202。不要把工作流配置中密钥输出到日志。
+
+## 自订外观
+
+v2 读取全部重复 CreativeStyle 标签，但始终以主 `Sony:CreativeStyle` 判定：实片中的 `Unknown (249)` 至 `Unknown (254)`（或数字形式）代表自订 1–6；重复字段中的 `Standard` 是基础外观，不能覆盖自订编号。支持直接出现的 Classic Neg.、Classic Chrome、Nostalgic Neg.、GR Negative Film、GR Positive Film、Astia 等完整名称。
+
+每个私有 `customProfiles` 条目包含：`id`、`cameraHash`、UTC `from`、可选排他 `until`，以及按槽位 1–6 排列的 `slots`。机身键为 `SHA256("Sony:InternalSerialNumber:" + trim(序列号))`；原始序列号、机身哈希及真实绑定只放 NAS 私有配置，不提交到 Git。拍摄时刻由原片 DateTimeOriginal、SubSecTimeOriginal、OffsetTimeOriginal 计算，不能以导入时间匹配。
+
+本次已核对的槽位顺序为 `Astia / GR正片 / GR负片 / NN / CC / NC`。没有匹配的机身/拍摄时间，或同一时刻有多份配置，则跳过/报告冲突，绝不降级成 ST。以后更换槽位外观时，应关闭旧配置的有效区间并追加新配置，保留旧照片的历史解释。RAW 描述记录拍摄时选择的外观，不自动应用 Lightroom/DCP 渲染。
+
+升级后可执行 `service.cjs retry-custom`，仅重排尚未写入、因这六种自订标记被跳过的任务；不会重写已完成项、人工冲突或普通未知值。
+
+`prepare.cjs --root <目录> --audit-dir <审计目录> [--apply] <明确文件列表>` 用于尚未被 Immich 收录的照片。默认只预检，`--apply` 才新建完整文件名加 `.xmp` 的旁车；保留原片哈希，整批预检后逐个原子创建并回读两个描述字段。已有不同内容的旁车不覆盖。执行时仅允许目标目录写入，并将各个原片单独叠加为只读挂载；处理记录保存在审计目录。常驻服务的媒体挂载继续只读。
 
 ## 操作
 
