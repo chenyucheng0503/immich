@@ -8,7 +8,7 @@ import {
   LogPreviewOverrideDto,
   LogPreviewRebuildDto,
 } from 'src/dtos/log-preview.dto';
-import { AssetType, JobName, JobStatus, Permission, QueueName } from 'src/enum';
+import { AssetType, ImmichWorker, JobName, JobStatus, Permission, QueueName } from 'src/enum';
 import { ArgOf } from 'src/repositories/event.repository';
 import { BaseService } from 'src/services/base.service';
 import { JobOf } from 'src/types';
@@ -33,7 +33,7 @@ export class LogPreviewService extends BaseService {
     await this.logPreviewRepository.validateConfig(newConfig.ffmpeg.logPreview);
   }
 
-  @OnEvent({ name: 'ConfigUpdate', server: true })
+  @OnEvent({ name: 'ConfigUpdate', server: true, workers: [ImmichWorker.Microservices] })
   async configChanged({ oldConfig, newConfig }: ArgOf<'ConfigUpdate'>) {
     if (isEqual(oldConfig.ffmpeg.logPreview, newConfig.ffmpeg.logPreview)) {
       return;
