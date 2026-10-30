@@ -4,6 +4,7 @@
 
 ## 改造范围
 
+- `sony-creative-look/`：A7C II 标准创意外观转缩写，通过原生工作流和资产 API 自动写入 XMP 旁车；独立容器、持久化逐张记录，支持按拍摄日期回填。部署和操作见该目录 README。
 - `raw-cleanup/`：从 NAS 当前已部署的 `20261028-1` 发布目录原样纳入。JPG/JPEG 经 Immich 原生永久删除后，检查并清理同目录同名、未被 Immich 收录的 ARW/CR2。回收站内不执行，原片变化或数据库核对失败时保留 RAW；状态继续持久化。
 - Log 预览：`server/src/{controllers,services,repositories}/log-preview.*`、`server/src/utils/log-preview.*` 和现有媒体生成链路。设置入口在官方“视频转码”分组；Web 组件为 `LogPreviewSettings.svelte`。
 - 原片不套 LUT；视频代理、缩略图、预览图使用同一颜色变换。Sony RTMD 区分 S-Gamut3.Cine/S-Log3 与 S-Gamut3/S-Log3；DJI 只依据明确的颜色模式字段识别，缺字段可手动指定，不能以机型猜测 Log。

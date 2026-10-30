@@ -1,0 +1,33 @@
+name: immich_sony_look
+services:
+  sony-creative-look:
+    image: ${SONY_LOOK_IMAGE:?set SONY_LOOK_IMAGE}
+    container_name: immich_sony_look
+    restart: unless-stopped
+    user: '99:100'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 0.5
+    mem_limit: 512m
+    stop_grace_period: 60s
+    tmpfs: [/tmp:size=64m,mode=1777]
+    volumes:
+      - /mnt/cache/appdata/immich-custom/sony-creative-look/state:/state
+      - /mnt/cache/appdata/immich-custom/sony-creative-look/config.private.json:/run/secrets/config.json:ro
+      - /mnt/cache/ImmichFast:/data:ro
+      - /mnt/user/Photos:/extlib:ro
+      - /mnt/user/PhotoFast:/extlib2:ro
+      - /mnt/user/Photos/OnedrivePhoto/260124新西兰:/extlib2/260124新西兰:ro
+    networks:
+      immich:
+        aliases: [immich-sony-look]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8787/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+networks:
+  immich:
+    external: true
+    name: immich_default
