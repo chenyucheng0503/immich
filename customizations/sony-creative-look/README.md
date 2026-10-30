@@ -54,3 +54,5 @@ docker exec immich_sony_look node /opt/sony-creative-look/service.cjs retry <ass
 ## 验证
 
 `node --test core.test.cjs` 覆盖映射、范围、人工描述、冲突、幂等、API 成功但未落盘、请求超时后的恢复、原片替换和重启游标。上线还需完成真实 A7C2 写入回读、新导入工作流、元数据重提取和原片哈希验证；单元检查不能替代这些验收。
+
+2026-10-30：14 项针对性检查通过。京都真实 JPG 已验证 Portrait→PT、两个 XMP 描述字段、Immich 信息面板显示及元数据重提取后保持一致，原片 SHA-256 不变。独立生成测试图并复制相机元数据后上传，验证原生工作流自动触发并完成写入，随后通过 Immich API 删除该测试资产。没有重启或替换原 Immich/LUT 容器。RAW、HEIF 的实片覆盖，以及那六个新增自定义外观不在本次验收结论内。
