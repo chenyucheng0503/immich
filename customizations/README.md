@@ -44,3 +44,26 @@ LUT 属于第三方资源，采用私有持久化文件，不提交 Git、不捆
 ## 验证
 
 关键检查覆盖 RTMD 边界、不同 Log 的识别、普通视频不误判、LUT 格式、QSV 前的浮点颜色转换、原有转码逻辑和 RAW 清理规则。部署后还要检查设置保存、真实样片自动识别、同帧对照、生成的播放代理和缩略图、原片校验和以及 RAW 扩展健康状态。测试目录使用临时文件，不能拿用户原片验证永久删除。
+
+
+## Sony 存量回填
+
+通过管理员 API `POST /api/admin/log-preview/rebuild`，请求体为 `{"sonyOnly": true}`，提交一个持久化后台扫描任务。它只扫描可用且未删除的 Sony 视频，依据元数据和默认规则匹配 LUT；已完成同版本视频及缩略图会跳过，重启后可重新扫描恢复。不会将所有 Sony 视频直接认定为 Log。
+
+扫描任务按原生视频/缩略图队列容量逐步补充任务，每个队列的在途量达到 2 时等待，不修改全局并发参数。配置更新仅由 microservices 进程发起一次重建，避免 API 和后台进程重复排队。原片不变；旧预览在新文件完整生成后替换。
+
+2026-10-30 的存量清单存于 NAS 私有目录 `/mnt/cache/appdata/immich-custom/backfills/sony-log-20261030/manifest.json`。只读进度统计：
+
+```sh
+python3 /mnt/user/code/immich/customizations/backfill_status.py --manifest /mnt/cache/appdata/immich-custom/backfills/sony-log-20261030/manifest.json
+```
+
+加 `--details` 可查看未完成素材和错误。只有目标 LUT 的视频和缩略图都完成才计入完成数。清单、状态、用户素材和第三方 LUT 不提交 Git。
+
+## 本次验收边界
+
+Sony 三段实片已验证 RTMD 自动识别、QSV 编码、Rec.709 标记、竖拍方向、原片校验和、完整视频的 Web 播放和缩略图。294 项相关单元回归通过，后续修改定向复测；新增的回填容量限制和恢复跳过测试通过。RAW 清理在 NAS Linux 上 15 项测试及原生处理器检查通过。
+
+用户确认当前 Pocket 3 素材未用 D-Log M 拍摄，本次优先验收 Sony。Pocket 3 保留官方 LUT 和手动指定入口；现有文件没有能可靠读取的 Log 模式标记，自动识别优化等拿到 D-Log M 正样本和普通模式负样本后进行，不能拿 BT.709 标签或机型猜测。Sony 模式识别失败时同样不自动套 LUT。
+
+本地 Web 的 TypeScript 检查、Svelte 检查和构建通过；项目现有 `tscompat/tscompat` ESLint 规则在锁定 TypeScript 6 环境中崩溃，局部 lint 临时关闭该规则后通过，没有改动仓库的规则配置。没有进行全库播放、手机本机播放或长期高负载稳定性验收。
