@@ -54,6 +54,7 @@ const updatedConfig = Object.freeze<SystemConfig>({
     },
   },
   ffmpeg: {
+    logPreview: defaults.ffmpeg.logPreview,
     crf: 30,
     threads: 0,
     preset: 'ultrafast',

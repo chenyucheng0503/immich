@@ -27,6 +27,7 @@ import { EventRepository } from 'src/repositories/event.repository';
 import { IntegrityRepository } from 'src/repositories/integrity.repository';
 import { JobRepository } from 'src/repositories/job.repository';
 import { LibraryRepository } from 'src/repositories/library.repository';
+import { LogPreviewRepository } from 'src/repositories/log-preview.repository';
 import { LoggingRepository } from 'src/repositories/logging.repository';
 import { MachineLearningRepository } from 'src/repositories/machine-learning.repository';
 import { MapRepository } from 'src/repositories/map.repository';
@@ -92,6 +93,7 @@ export const BASE_SERVICE_DEPENDENCIES = [
   MachineLearningRepository,
   MapRepository,
   MediaRepository,
+  LogPreviewRepository,
   MemoryRepository,
   MetadataRepository,
   MoveRepository,
@@ -154,6 +156,7 @@ export class BaseService {
     protected machineLearningRepository: MachineLearningRepository,
     protected mapRepository: MapRepository,
     protected mediaRepository: MediaRepository,
+    protected logPreviewRepository: LogPreviewRepository,
     protected memoryRepository: MemoryRepository,
     protected metadataRepository: MetadataRepository,
     protected moveRepository: MoveRepository,
@@ -225,6 +228,7 @@ export class BaseService {
       ctx.machineLearningRepository,
       ctx.mapRepository,
       ctx.mediaRepository,
+      ctx.logPreviewRepository,
       ctx.memoryRepository,
       ctx.metadataRepository,
       ctx.moveRepository,

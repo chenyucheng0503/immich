@@ -213,11 +213,17 @@ export class TranscodingService extends BaseService {
     const gop = Math.ceil(HLS_SEGMENT_DURATION * fps);
     const seekSeconds = startSegment > 0 ? (startSegment * gop - 0.5) / fps : 0;
 
+    const logPlan = await this.logPreviewRepository.resolve(
+      { id: session.assetId, originalPath: asset.originalPath },
+      ffmpeg.logPreview,
+    );
+    const logColor = logPlan ? { logLutPath: logPlan.path, logInputRange: logPlan.detection.inputRange } : {};
     let config;
     try {
       config = BaseConfig.create(
         {
           ...ffmpeg,
+          ...logColor,
           targetVideoCodec: variant.codec,
           targetResolution: String(variant.resolution),
           maxBitrate: `${Math.round(variant.bitrate / 1000)}k`,

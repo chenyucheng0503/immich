@@ -21,6 +21,9 @@ import {
   VideoStreamInfo,
   VideoTuning,
 } from 'src/types';
+import { logLutFilter } from 'src/utils/log-preview';
+
+export type LogTranscodeConfig = ConfigFFmpegDto & { logLutPath?: string; logInputRange?: 'full' | 'limited' };
 
 export const isVideoRotated = (videoStream: VideoStreamInfo): boolean => Math.abs(videoStream.rotation) === 90;
 
@@ -62,18 +65,28 @@ export const getCodecString = (codec: VideoCodec, width: number, height: number,
 export class BaseConfig implements VideoCodecSWConfig {
   readonly presets = ['veryslow', 'slower', 'slow', 'medium', 'fast', 'faster', 'veryfast', 'superfast', 'ultrafast'];
   protected constructor(
-    protected config: ConfigFFmpegDto,
+    protected config: LogTranscodeConfig,
     protected tune: VideoTuning = { strictGop: false, lowLatency: false },
   ) {}
 
-  static create(config: ConfigFFmpegDto, interfaces: VideoInterfaces, tune?: VideoTuning) {
+  static create(config: LogTranscodeConfig, interfaces: VideoInterfaces, tune?: VideoTuning) {
+    // Log 颜色变换使用 CPU 浮点 RGB；QSV 编码仍可使用，禁止把硬件帧直接送入 lut3d。
+    if (config.logLutPath) {
+      config = {
+        ...config,
+        accelDecode: false,
+        accel: [TranscodeHardwareAcceleration.Qsv, TranscodeHardwareAcceleration.Disabled].includes(config.accel)
+          ? config.accel
+          : TranscodeHardwareAcceleration.Disabled,
+      };
+    }
     if (config.accel === TranscodeHardwareAcceleration.Disabled) {
       return BaseConfig.getSWCodecConfig(config, tune);
     }
     return BaseConfig.getHWCodecConfig(config, interfaces, tune);
   }
 
-  private static getSWCodecConfig(config: ConfigFFmpegDto, tune?: VideoTuning): VideoCodecSWConfig {
+  private static getSWCodecConfig(config: LogTranscodeConfig, tune?: VideoTuning): VideoCodecSWConfig {
     switch (config.targetVideoCodec) {
       case VideoCodec.H264: {
         return new H264Config(config, tune);
@@ -93,7 +106,7 @@ export class BaseConfig implements VideoCodecSWConfig {
     }
   }
 
-  private static getHWCodecConfig(config: ConfigFFmpegDto, interfaces: VideoInterfaces, tune?: VideoTuning) {
+  private static getHWCodecConfig(config: LogTranscodeConfig, interfaces: VideoInterfaces, tune?: VideoTuning) {
     if (!SUPPORTED_HWA_CODECS[config.accel].includes(config.targetVideoCodec)) {
       throw new Error(
         `${config.accel.toUpperCase()} acceleration does not support codec '${config.targetVideoCodec.toUpperCase()}'. Supported codecs: ${SUPPORTED_HWA_CODECS[config.accel]}`,
@@ -221,6 +234,9 @@ export class BaseConfig implements VideoCodecSWConfig {
     const audioCodec = [TranscodeTarget.All, TranscodeTarget.Audio].includes(target) ? this.getAudioEncoder() : 'copy';
 
     const options = ['-c:v', videoCodec, '-c:a', audioCodec, '-map', `0:${videoStream.index}`, '-map_metadata', '-1'];
+    if (this.config.logLutPath) {
+      options.push('-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-color_range', 'tv');
+    }
     if (audioStream) {
       options.push('-map', `0:${audioStream.index}`);
       // If there are more than 2 channels sometimes the channel config is broken when re-encoded
@@ -254,7 +270,21 @@ export class BaseConfig implements VideoCodecSWConfig {
     return [];
   }
 
+  getLogFilterOptions(videoStream: VideoStreamInfo) {
+    const filters = logLutFilter(this.config.logLutPath!, this.config.logInputRange);
+    const scale = this.shouldScale(videoStream)
+      ? isVideoVertical(videoStream)
+        ? `${this.getTargetResolution(videoStream)}:-2`
+        : `-2:${this.getTargetResolution(videoStream)}`
+      : 'trunc(iw/2)*2:trunc(ih/2)*2';
+    filters[0] = filters[0].replace('scale=', () => `scale=${scale}:`);
+    return filters;
+  }
+
   getFilterOptions(videoStream: VideoStreamInfo) {
+    if (this.config.logLutPath) {
+      return this.getLogFilterOptions(videoStream);
+    }
     const options = [];
     if (this.shouldScale(videoStream)) {
       options.push(`scale=${this.getScaling(videoStream)}`);
@@ -424,7 +454,7 @@ export class BaseHWConfig extends BaseConfig {
   protected device: string;
 
   constructor(
-    protected config: ConfigFFmpegDto,
+    protected config: LogTranscodeConfig,
     protected interfaces: VideoInterfaces,
     tune?: VideoTuning,
   ) {
@@ -471,7 +501,7 @@ export class BaseHWConfig extends BaseConfig {
 }
 
 export class ThumbnailConfig extends BaseConfig {
-  static create(config: ConfigFFmpegDto): VideoCodecSWConfig {
+  static create(config: LogTranscodeConfig): VideoCodecSWConfig {
     return new ThumbnailConfig(config);
   }
 
@@ -791,6 +821,9 @@ export class QsvSwDecodeConfig extends BaseHWConfig {
   }
 
   getFilterOptions(videoStream: VideoStreamInfo) {
+    if (this.config.logLutPath) {
+      return [...this.getLogFilterOptions(videoStream), 'format=nv12', 'hwupload=extra_hw_frames=64'];
+    }
     const options = this.getToneMapping(videoStream);
     options.push('hwupload=extra_hw_frames=64');
     if (this.shouldScale(videoStream)) {

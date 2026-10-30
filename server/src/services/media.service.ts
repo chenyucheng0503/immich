@@ -1,4 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import fs from 'node:fs/promises';
+import { extname } from 'node:path';
 import { FACE_THUMBNAIL_SIZE } from 'src/constants';
 import { ImagePathOptions, StorageCore, ThumbnailPathEntity } from 'src/cores/storage.core';
 import { AssetFile } from 'src/database';
@@ -25,6 +28,7 @@ import {
   VideoContainer,
 } from 'src/enum';
 import { AssetJobRepository } from 'src/repositories/asset-job.repository';
+import { LogPlan } from 'src/repositories/log-preview.repository';
 import { BoundingBox } from 'src/repositories/machine-learning.repository';
 import { BaseService } from 'src/services/base.service';
 import {
@@ -34,13 +38,14 @@ import {
   ImageDimensions,
   JobItem,
   JobOf,
+  TranscodeCommand,
   VideoFormat,
   VideoInterfaces,
   VideoStreamInfo,
 } from 'src/types';
 import { getAssetFile, getDimensions } from 'src/utils/asset.util';
 import { checkFaceVisibility, checkOcrVisibility } from 'src/utils/editor';
-import { BaseConfig, ThumbnailConfig } from 'src/utils/media';
+import { BaseConfig, LogTranscodeConfig, ThumbnailConfig } from 'src/utils/media';
 import { mimeTypes } from 'src/utils/mime-types';
 import { batched, clamp } from 'src/utils/misc';
 import { getOutputDimensions } from 'src/utils/transform';
@@ -489,7 +494,39 @@ export class MediaService extends BaseService {
     };
   }
 
+  private async transcodePreview(
+    input: string,
+    output: string,
+    command: TranscodeCommand,
+    plan?: LogPlan,
+    assetId?: string,
+  ) {
+    if (!plan) {
+      return this.mediaRepository.transcode(input, output, command);
+    }
+    const temporary = `${output}.${randomUUID()}${extname(output)}`;
+    try {
+      await this.mediaRepository.transcode(input, temporary, command);
+      const currentConfig = await this.getConfig({ withCache: false });
+      const currentPlan = await this.logPreviewRepository.resolve(
+        { id: assetId!, originalPath: input, cameraModel: plan.detection.model },
+        currentConfig.ffmpeg.logPreview,
+      );
+      if (currentPlan?.revision !== plan.revision) {
+        throw new Error('Log 规则或原片已变化，丢弃过时预览');
+      }
+      await fs.rename(temporary, output);
+    } finally {
+      await fs.rm(temporary, { force: true });
+    }
+  }
+
   private async generateVideoThumbnails(asset: ThumbnailAsset, { ffmpeg, image }: SystemConfig) {
+    const plan = await this.logPreviewRepository.resolve(asset, ffmpeg.logPreview);
+    const color = plan ? { logLutPath: plan.path, logInputRange: plan.detection.inputRange } : {};
+    if (plan) {
+      await this.logPreviewRepository.record(asset.id, 'thumbnail', 'processing', plan);
+    }
     const previewFile = this.getImageFile(asset, {
       fileType: AssetFileType.Preview,
       format: image.preview.format,
@@ -511,13 +548,27 @@ export class MediaService extends BaseService {
       throw new Error(`Missing video metadata for asset ${asset.id}`);
     }
 
-    const previewConfig = ThumbnailConfig.create({ ...ffmpeg, targetResolution: image.preview.size.toString() });
-    const thumbConfig = ThumbnailConfig.create({ ...ffmpeg, targetResolution: image.thumbnail.size.toString() });
+    const previewConfig = ThumbnailConfig.create({
+      ...ffmpeg,
+      ...color,
+      targetResolution: image.preview.size.toString(),
+    });
+    const thumbConfig = ThumbnailConfig.create({
+      ...ffmpeg,
+      ...color,
+      targetResolution: image.thumbnail.size.toString(),
+    });
     const previewOptions = previewConfig.getCommand(TranscodeTarget.Video, videoStream, undefined, format ?? undefined);
     const thumbnailOptions = thumbConfig.getCommand(TranscodeTarget.Video, videoStream, undefined, format ?? undefined);
 
-    await this.mediaRepository.transcode(asset.originalPath, previewFile.path, previewOptions);
-    await this.mediaRepository.transcode(asset.originalPath, thumbnailFile.path, thumbnailOptions);
+    try {
+      await this.transcodePreview(asset.originalPath, previewFile.path, previewOptions, plan, asset.id);
+      await this.transcodePreview(asset.originalPath, thumbnailFile.path, thumbnailOptions, plan, asset.id);
+      await this.logPreviewRepository.record(asset.id, 'thumbnail', 'complete', plan);
+    } catch (error) {
+      await this.logPreviewRepository.record(asset.id, 'thumbnail', 'failed', plan, (error as Error).message);
+      throw error;
+    }
 
     const thumbhash = await this.mediaRepository.generateThumbhash(previewFile.path, {
       colorspace: image.colorspace,
@@ -566,8 +617,19 @@ export class MediaService extends BaseService {
       return JobStatus.Failed;
     }
 
-    let { ffmpeg } = await this.getConfig({ withCache: true });
-    const target = this.getTranscodeTarget(ffmpeg, videoStream, audioStream);
+    const systemConfig = await this.getConfig({ withCache: true });
+    const plan = await this.logPreviewRepository.resolve(asset, systemConfig.ffmpeg.logPreview);
+    let ffmpeg: LogTranscodeConfig = plan
+      ? { ...systemConfig.ffmpeg, logLutPath: plan.path, logInputRange: plan.detection.inputRange, accelDecode: false }
+      : systemConfig.ffmpeg;
+    let target = this.getTranscodeTarget(ffmpeg, videoStream, audioStream);
+    if (plan) {
+      target = [TranscodeTarget.Audio, TranscodeTarget.All].includes(target)
+        ? TranscodeTarget.All
+        : TranscodeTarget.Video;
+      await this.logPreviewRepository.record(id, 'video', 'processing', plan);
+      this.logger.log(`Log 预览 ${id}: ${plan.detection.model} / ${plan.profile} → ${plan.lut.name}`);
+    }
     if (target === TranscodeTarget.None && !this.isRemuxRequired(ffmpeg, format)) {
       const encodedVideo = getAssetFile(asset.files, AssetFileType.EncodedVideo, { isEdited: false });
       if (encodedVideo) {
@@ -578,6 +640,7 @@ export class MediaService extends BaseService {
         this.logger.verbose(`Asset ${asset.id} does not require transcoding based on current policy, skipping`);
       }
 
+      await this.logPreviewRepository.record(id, 'video', 'complete');
       return JobStatus.Skipped;
     }
 
@@ -591,10 +654,11 @@ export class MediaService extends BaseService {
     }
 
     try {
-      await this.mediaRepository.transcode(input, output, command);
+      await this.transcodePreview(input, output, command, plan, asset.id);
     } catch (error: any) {
       this.logger.error(`Error occurred during transcoding: ${error.message}`);
       if (ffmpeg.accel === TranscodeHardwareAcceleration.Disabled) {
+        await this.logPreviewRepository.record(id, 'video', 'failed', plan, error.message);
         return JobStatus.Failed;
       }
 
@@ -604,7 +668,7 @@ export class MediaService extends BaseService {
           this.logger.error(`Retrying with ${ffmpeg.accel.toUpperCase()}-accelerated encoding and software decoding`);
           ffmpeg = { ...ffmpeg, accelDecode: false };
           const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, videoStream, audioStream);
-          await this.mediaRepository.transcode(input, output, command);
+          await this.transcodePreview(input, output, command, plan, asset.id);
           isPartialFallbackSuccess = true;
         } catch (error: any) {
           this.logger.error(`Error occurred during transcoding: ${error.message}`);
@@ -615,10 +679,11 @@ export class MediaService extends BaseService {
         this.logger.error(`Retrying with ${ffmpeg.accel.toUpperCase()} acceleration disabled`);
         ffmpeg = { ...ffmpeg, accel: TranscodeHardwareAcceleration.Disabled };
         const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, videoStream, audioStream);
-        await this.mediaRepository.transcode(input, output, command);
+        await this.transcodePreview(input, output, command, plan, asset.id);
       }
     }
 
+    await this.logPreviewRepository.record(id, 'video', 'complete', plan);
     this.logger.log(`Successfully encoded ${asset.id}`);
 
     await this.assetRepository.upsertFile({

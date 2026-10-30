@@ -18541,6 +18541,9 @@
           "twoPass": {
             "description": "Two pass",
             "type": "boolean"
+          },
+          "logPreview": {
+            "$ref": "#/components/schemas/LogPreviewConfigDto"
           }
         },
         "required": [
@@ -18565,7 +18568,8 @@
           "threads",
           "tonemap",
           "transcode",
-          "twoPass"
+          "twoPass",
+          "logPreview"
         ],
         "type": "object"
       },
@@ -33262,6 +33266,51 @@
           }
         },
         "type": "object"
+      },
+      "LogPreviewRuleDto": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "profile": {
+            "type": "string",
+            "enum": [
+              "sony-slog3-cine",
+              "sony-slog3",
+              "dji-dlog-m",
+              "dji-dlog"
+            ]
+          },
+          "lutId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "model",
+          "profile",
+          "lutId"
+        ]
+      },
+      "LogPreviewConfigDto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "rules": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/LogPreviewRuleDto"
+            }
+          }
+        },
+        "required": [
+          "enabled",
+          "rules"
+        ]
       }
     }
   }

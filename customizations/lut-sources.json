@@ -1,0 +1,23 @@
+[
+  {
+    "profile": "sony-slog3-cine",
+    "name": "Sony 709(800%) · S-Gamut3.Cine/S-Log3",
+    "sha256": "26650d8c0a7556f78a796377975749c8d5450e460d80a899225aeb2597bc0f65",
+    "source": "https://support.d-imaging.sony.co.jp/disoft_DL/CatalystBrowse_DL/mac?fm=en",
+    "version": "Catalyst Browse 2026.1.1.100"
+  },
+  {
+    "profile": "sony-slog3",
+    "name": "Sony 709(800%) · S-Gamut3/S-Log3",
+    "sha256": "c8ea3a4b8083187aa09d24e54de79429108cf4c44277139187f91efcfa88ef9d",
+    "source": "https://support.d-imaging.sony.co.jp/disoft_DL/CatalystBrowse_DL/mac?fm=en",
+    "version": "Catalyst Browse 2026.1.1.100"
+  },
+  {
+    "profile": "dji-dlog-m",
+    "name": "DJI Pocket 3 D-Log M → Rec.709",
+    "sha256": "b18162854ab47702068410c33afa98a8cb6eef159fc5a04ce0e65fad0fd8947e",
+    "source": "https://www.dji.com/osmo-pocket-3/downloads",
+    "version": "V1"
+  }
+]

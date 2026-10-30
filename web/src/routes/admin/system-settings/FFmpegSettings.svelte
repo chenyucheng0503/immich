@@ -1,4 +1,5 @@
 <script lang="ts">
+  import LogPreviewSettings from './LogPreviewSettings.svelte';
   import SettingAccordion from '$lib/components/shared-components/settings/SettingAccordion.svelte';
   import SettingCheckboxes from './SettingCheckboxes.svelte';
   import SettingInputField from '$lib/components/shared-components/settings/SettingInputField.svelte';
@@ -49,6 +50,13 @@
           </FormatMessage>
         </p>
 
+        <SettingAccordion
+          key="log-preview"
+          title="Log 预览还原"
+          subtitle="按机型与 Log 类型选择 LUT，自动还原播放预览和缩略图"
+        >
+          <LogPreviewSettings bind:config={configToEdit.ffmpeg.logPreview} {disabled} />
+        </SettingAccordion>
         <SettingAccordion
           key="transcoding-policy"
           title={$t('admin.transcoding_policy')}

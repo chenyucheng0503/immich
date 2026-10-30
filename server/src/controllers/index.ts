@@ -18,6 +18,7 @@ import { FaceController } from 'src/controllers/face.controller';
 import { IntegrityAdminController } from 'src/controllers/integrity-admin.controller';
 import { JobController } from 'src/controllers/job.controller';
 import { LibraryController } from 'src/controllers/library.controller';
+import { LogPreviewController } from 'src/controllers/log-preview.controller';
 import { MaintenanceController } from 'src/controllers/maintenance.controller';
 import { MapController } from 'src/controllers/map.controller';
 import { MemoryController } from 'src/controllers/memory.controller';
@@ -46,6 +47,7 @@ import { ViewController } from 'src/controllers/view.controller';
 import { WorkflowController } from 'src/controllers/workflow.controller';
 
 export const controllers = [
+  LogPreviewController,
   ApiKeyController,
   ActivityController,
   AlbumController,

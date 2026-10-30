@@ -154,6 +154,13 @@
     <DetailPanelRating {asset} {isOwner} />
     <DetailPanelPeople {asset} {isOwner} {previousRoute} />
 
+    {#if asset.type === 'VIDEO' && authManager.authenticated && authManager.user.isAdmin}
+      <div class="px-4 py-2">
+        <Link href={`/admin/system-settings?logAsset=${asset.id}&isOpen=video-transcoding%20log-preview`}
+          >Log 预览还原：查看识别结果与单片设置</Link
+        >
+      </div>
+    {/if}
     <div class="p-4">
       {#if asset.exifInfo}
         <div class="flex h-10 w-full items-center justify-between text-sm">

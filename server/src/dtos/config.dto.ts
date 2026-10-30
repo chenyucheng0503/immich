@@ -1,6 +1,7 @@
 import { CronExpression } from '@nestjs/schedule';
 import { validateCronExpression } from 'cron';
 import { createZodDto } from 'nestjs-zod';
+import { LogPreviewConfigSchema, logPreviewDefaults } from 'src/dtos/log-preview.dto';
 import {
   AudioCodec,
   AudioCodecSchema,
@@ -92,6 +93,7 @@ const AdminConfigGeneratedImageSchema = z
 
 const AdminConfigFFmpegSchema = z
   .object({
+    logPreview: LogPreviewConfigSchema.default(logPreviewDefaults),
     crf: z.coerce.number().int().min(0).max(51).describe('CRF'),
     threads: z.coerce.number().int().min(0).describe('Threads'),
     preset: z.string().describe('Preset'),
@@ -552,6 +554,7 @@ export const defaults = Object.freeze<SystemConfig>({
     },
   },
   ffmpeg: {
+    logPreview: logPreviewDefaults,
     crf: 23,
     threads: 0,
     preset: 'ultrafast',

@@ -1,0 +1,6 @@
+{
+  "roots": ["/extlib/OnedrivePhoto", "/extlib2"],
+  "rawExtensions": [".arw", ".cr2"],
+  "stateDirectory": "/var/lib/immich-raw-cleanup",
+  "storageServiceSha256": "e2a8501542cae7ef509ce81fa50497d551b56abab469c4b84413bc6b71a06b66"
+}

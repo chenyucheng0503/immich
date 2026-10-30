@@ -345,6 +345,18 @@ export class AssetJobRepository {
       .stream();
   }
 
+  streamForLogPreview() {
+    return this.db
+      .selectFrom('asset')
+      .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
+      .select(['asset.id', 'asset.originalPath', 'asset_exif.model as cameraModel'])
+      .where('asset.type', '=', AssetType.Video)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.visibility', '!=', AssetVisibility.Hidden)
+      .where('asset.isOffline', '=', false)
+      .stream();
+  }
+
   @GenerateSql({ params: [DummyValue.UUID] })
   getForVideoConversion(id: string) {
     return this.db

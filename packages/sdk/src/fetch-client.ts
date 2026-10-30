@@ -73,7 +73,14 @@ export type AdminConfigFFmpegRealtimeDto = {
     /** Video codecs to use for real-time HLS transcoding */
     videoCodecs: VideoCodec[];
 };
+export type LogPreviewRuleDto = {
+    model: string;
+    profile: 'sony-slog3-cine' | 'sony-slog3' | 'dji-dlog-m' | 'dji-dlog';
+    lutId: string;
+};
+export type LogPreviewConfigDto = { enabled: boolean; rules: LogPreviewRuleDto[] };
 export type AdminConfigFFmpegDto = {
+    logPreview: LogPreviewConfigDto;
     accel: TranscodeHWAccel;
     /** Accelerated decode */
     accelDecode: boolean;

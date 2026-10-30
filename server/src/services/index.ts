@@ -17,6 +17,7 @@ import { HlsService } from 'src/services/hls.service';
 import { IntegrityService } from 'src/services/integrity.service';
 import { JobService } from 'src/services/job.service';
 import { LibraryService } from 'src/services/library.service';
+import { LogPreviewService } from 'src/services/log-preview.service';
 import { MaintenanceService } from 'src/services/maintenance.service';
 import { MapService } from 'src/services/map.service';
 import { MediaService } from 'src/services/media.service';
@@ -53,6 +54,7 @@ import { WorkflowExecutionService } from 'src/services/workflow-execution.servic
 import { WorkflowService } from 'src/services/workflow.service';
 
 export const services = [
+  LogPreviewService,
   ApiKeyService,
   ActivityService,
   AlbumService,

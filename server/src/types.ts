@@ -5,6 +5,7 @@ import { UploadFieldName } from 'src/dtos/asset-media.dto';
 import { AuthDto } from 'src/dtos/auth.dto';
 import { SystemConfig } from 'src/dtos/config.dto';
 import { AssetEditActionItem } from 'src/dtos/editing.dto';
+import { LogPreviewConfig } from 'src/dtos/log-preview.dto';
 import { SetMaintenanceModeDto } from 'src/dtos/maintenance.dto';
 import {
   AacProfile,
@@ -344,6 +345,10 @@ export type JobItem =
   // Transcoding
   | { name: JobName.AssetEncodeVideoQueueAll; data: IBaseJob }
   | { name: JobName.AssetEncodeVideo; data: IEntityJob }
+  | {
+      name: JobName.LogPreviewScan;
+      data: { assetIds?: string[]; knownOnly?: boolean; previousConfig?: LogPreviewConfig };
+    }
 
   // Thumbnails
   | { name: JobName.AssetGenerateThumbnailsQueueAll; data: IBaseJob }
