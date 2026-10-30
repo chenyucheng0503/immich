@@ -1,6 +1,4 @@
 <script lang="ts">
-  import { Link } from '@immich/ui';
-
   let { assetId }: { assetId: string } = $props();
   let applied = $state<{ assetId: string; name: string }>();
 
@@ -32,8 +30,9 @@
 
 {#if applied?.assetId === assetId}
   <div class="px-4 py-2">
-    <Link href={`/admin/system-settings?logAsset=${assetId}&isOpen=video-transcoding%20log-preview`}>
-      LUT:{applied.name}
-    </Link>
+    <p>LUT:</p>
+    {#each applied.name.split(' · ') as line, index (index)}
+      <p>{line}</p>
+    {/each}
   </div>
 {/if}

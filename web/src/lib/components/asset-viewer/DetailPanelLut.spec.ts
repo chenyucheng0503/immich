@@ -16,17 +16,19 @@ describe('视频详情的 LUT 提示', () => {
     vi.stubGlobal('fetch', fetch);
     render(DetailPanelLut, { props: { assetId: 'normal-video' } });
     await waitFor(() => expect(fetch).toHaveBeenCalledOnce());
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.queryByText('LUT:')).not.toBeInTheDocument();
   });
 
-  it('显示已应用的具体 LUT 名称', async () => {
+  it('以三行纯文本显示 LUT 和色域，不提供设置链接', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response('Sony 709(800%) · S-Gamut3.Cine/S-Log3')));
     render(DetailPanelLut, { props: { assetId: 'log-video' } });
-    const link = await screen.findByRole('link', { name: 'LUT:Sony 709(800%) · S-Gamut3.Cine/S-Log3' });
-    expect(link).toHaveAttribute(
-      'href',
-      '/admin/system-settings?logAsset=log-video&isOpen=video-transcoding%20log-preview',
-    );
+    const label = await screen.findByText('LUT:');
+    expect([...label.parentElement!.children].map((line) => line.textContent)).toEqual([
+      'LUT:',
+      'Sony 709(800%)',
+      'S-Gamut3.Cine/S-Log3',
+    ]);
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 
   it('快速切换到未套 LUT 的视频，不会被旧请求迟到的结果污染', async () => {
@@ -44,6 +46,6 @@ describe('视频详情的 LUT 提示', () => {
     await oldRequest;
     await Promise.resolve();
     flushSync();
-    expect(screen.queryByRole('link')).not.toBeInTheDocument();
+    expect(screen.queryByText('LUT:')).not.toBeInTheDocument();
   });
 });
