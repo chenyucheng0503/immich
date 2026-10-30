@@ -1,7 +1,7 @@
 import copy
 import unittest
 
-from recover import recover
+from recover import recover, has_video_stream
 
 
 def asset(**values):
@@ -180,6 +180,18 @@ class RecoveryTests(unittest.TestCase):
         f.q['library'] = {'queueStatus': {'isPaused': False}, 'jobCounts': {'active': 1}}
         self.run_once(f, scan_libraries=True)
         self.assertFalse(f.sent)
+
+    def test_attached_cover_is_not_a_video(self):
+        self.assertFalse(has_video_stream({'format': {'duration': '10'}, 'streams': [
+            {'codec_type': 'video', 'width': 1280, 'height': 720, 'disposition': {'attached_pic': 1}}]}))
+
+    def test_empty_video_track_is_rejected(self):
+        self.assertFalse(has_video_stream({'streams': [
+            {'codec_type': 'video', 'width': 1920, 'height': 1080, 'duration': 'N/A'}]}))
+
+    def test_normal_video_uses_container_duration(self):
+        self.assertTrue(has_video_stream({'format': {'duration': '0.1'}, 'streams': [
+            {'codec_type': 'video', 'width': 1920, 'height': 1080, 'disposition': {'attached_pic': 0}}]}))
 
 
 if __name__ == '__main__':

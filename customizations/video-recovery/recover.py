@@ -69,6 +69,19 @@ def timestamp(value):
     return dt.datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp()
 
 
+def has_video_stream(probe):
+    for stream in probe.get('streams', []):
+        if stream.get('codec_type') != 'video' or stream.get('disposition', {}).get('attached_pic'):
+            continue
+        try:
+            duration = float(stream.get('duration') or probe.get('format', {}).get('duration') or 0)
+        except (TypeError, ValueError):
+            continue
+        if stream.get('width', 0) > 0 and stream.get('height', 0) > 0 and duration > 0:
+            return True
+    return False
+
+
 class Native:
     def __init__(self):
         obj = self.command(['docker', 'inspect', 'immich_power_tools'], as_json=True)[0]
@@ -138,13 +151,13 @@ class Native:
 
     def probe(self, asset):
         result = subprocess.run(['docker', 'exec', 'immich_server', 'timeout', '30', 'ffprobe',
-              '-v', 'error', '-show_entries', 'format=duration:stream=codec_type,width,height',
+              '-v', 'error', '-show_entries',
+              'format=duration:stream=codec_type,width,height,duration:stream_disposition=attached_pic',
               '-of', 'json', asset['path']], capture_output=True, text=True, timeout=40)
         if result.returncode == 124:
             raise TimeoutError('原片探测超时')
         data = json.loads(result.stdout or '{}')
-        if result.returncode or not any(s.get('codec_type') == 'video' and s.get('width', 0) > 0
-                                       for s in data.get('streams', [])):
+        if result.returncode or not has_video_stream(data):
             return {'valid': False, 'reason': result.stderr[-1000:] or '容器没有有效视频流'}
         return {'valid': True}
 
