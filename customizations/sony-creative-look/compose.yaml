@@ -11,7 +11,7 @@ services:
     cpus: 0.5
     mem_limit: 512m
     stop_grace_period: 60s
-    tmpfs: [/tmp:size=64m,mode=1777]
+    tmpfs: ['/tmp:size=64m,mode=1777']
     volumes:
       - /mnt/cache/appdata/immich-custom/sony-creative-look/state:/state
       - /mnt/cache/appdata/immich-custom/sony-creative-look/config.private.json:/run/secrets/config.json:ro
