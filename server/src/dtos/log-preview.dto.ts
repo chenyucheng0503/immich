@@ -53,6 +53,7 @@ export class LogPreviewOverrideDto extends createZodDto(
 export class LogPreviewRebuildDto extends createZodDto(
   z.object({
     assetIds: z.array(z.uuid()).max(100).optional(),
+    sonyOnly: z.boolean().optional(),
   }),
 ) {}
 

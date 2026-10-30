@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { isEqual } from 'lodash';
+import { setTimeout as waitForCapacity } from 'node:timers/promises';
 import { OnEvent, OnJob } from 'src/decorators';
 import { AuthDto } from 'src/dtos/auth.dto';
 import {
@@ -99,7 +100,7 @@ export class LogPreviewService extends BaseService {
   }
 
   @OnJob({ name: JobName.LogPreviewScan, queue: QueueName.BackgroundTask })
-  async scan({ assetIds, knownOnly, previousConfig }: JobOf<JobName.LogPreviewScan>) {
+  async scan({ assetIds, knownOnly, sonyOnly, previousConfig }: JobOf<JobName.LogPreviewScan>) {
     const config = await this.getConfig({ withCache: false });
     const queue = async (id: string) => {
       try {
@@ -115,6 +116,28 @@ export class LogPreviewService extends BaseService {
         // 关闭功能/某资产后仍重建过去套过 LUT 的预览，避免留下过时颜色。
         if (!plan && !state.video?.lutId && !state.thumbnail?.lutId && !assetIds) {
           return;
+        }
+        // 批量回填与重启恢复跳过已完成的同版本结果；单片手动重建仍可重做。
+        if (
+          !assetIds &&
+          plan &&
+          state.video?.status === 'complete' &&
+          state.thumbnail?.status === 'complete' &&
+          state.video.revision === plan.revision &&
+          state.thumbnail.revision === plan.revision
+        ) {
+          return;
+        }
+        // N100 上限制本批次向两个原生队列补充的速度，不改变用户的全局并发设置。
+        while (true) {
+          const counts = await Promise.all([
+            this.jobRepository.getJobCounts(QueueName.VideoConversion),
+            this.jobRepository.getJobCounts(QueueName.ThumbnailGeneration),
+          ]);
+          if (counts.every((c) => c.active + c.waiting + c.paused + c.delayed < 2)) {
+            break;
+          }
+          await waitForCapacity(2000);
         }
         await Promise.all([
           this.logPreviewRepository.record(id, 'video', 'queued', plan),
@@ -134,7 +157,7 @@ export class LogPreviewService extends BaseService {
         await queue(id);
       }
     } else {
-      for await (const asset of this.assetJobRepository.streamForLogPreview()) {
+      for await (const asset of this.assetJobRepository.streamForLogPreview(sonyOnly)) {
         await queue(asset.id);
       }
     }

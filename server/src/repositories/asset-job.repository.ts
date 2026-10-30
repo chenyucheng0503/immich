@@ -345,7 +345,7 @@ export class AssetJobRepository {
       .stream();
   }
 
-  streamForLogPreview() {
+  streamForLogPreview(sonyOnly = false) {
     return this.db
       .selectFrom('asset')
       .leftJoin('asset_exif', 'asset_exif.assetId', 'asset.id')
@@ -354,6 +354,15 @@ export class AssetJobRepository {
       .where('asset.deletedAt', 'is', null)
       .where('asset.visibility', '!=', AssetVisibility.Hidden)
       .where('asset.isOffline', '=', false)
+      .$if(sonyOnly, (qb) =>
+        qb.where((eb) =>
+          eb.or([
+            eb('asset_exif.make', 'ilike', '%sony%'),
+            eb('asset_exif.model', 'ilike', 'ILCE%'),
+            eb('asset_exif.model', 'ilike', 'ILME%'),
+          ]),
+        ),
+      )
       .stream();
   }
 

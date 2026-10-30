@@ -680,11 +680,15 @@ export class MediaService extends BaseService {
         this.logger.error(`Retrying with ${ffmpeg.accel.toUpperCase()} acceleration disabled`);
         ffmpeg = { ...ffmpeg, accel: TranscodeHardwareAcceleration.Disabled };
         const command = BaseConfig.create(ffmpeg, this.videoInterfaces).getCommand(target, videoStream, audioStream);
-        await this.transcodePreview(input, output, command, plan, asset.id);
+        try {
+          await this.transcodePreview(input, output, command, plan, asset.id);
+        } catch (fallbackError) {
+          await this.logPreviewRepository.record(id, 'video', 'failed', plan, (fallbackError as Error).message);
+          throw fallbackError;
+        }
       }
     }
 
-    await this.logPreviewRepository.record(id, 'video', 'complete', plan);
     this.logger.log(`Successfully encoded ${asset.id}`);
 
     await this.assetRepository.upsertFile({
@@ -694,6 +698,7 @@ export class MediaService extends BaseService {
       isEdited: false,
     });
 
+    await this.logPreviewRepository.record(id, 'video', 'complete', plan);
     return JobStatus.Success;
   }
 

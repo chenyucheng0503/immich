@@ -347,7 +347,7 @@ export type JobItem =
   | { name: JobName.AssetEncodeVideo; data: IEntityJob }
   | {
       name: JobName.LogPreviewScan;
-      data: { assetIds?: string[]; knownOnly?: boolean; previousConfig?: LogPreviewConfig };
+      data: { assetIds?: string[]; knownOnly?: boolean; sonyOnly?: boolean; previousConfig?: LogPreviewConfig };
     }
 
   // Thumbnails
