@@ -61,7 +61,8 @@ def main():
     expected_service.setdefault('environment', {})['IMMICH_LOG_PREVIEW_DIR'] = '/var/lib/immich-log-preview'
     old_volumes = {v['target']: v for v in expected_service['volumes']}
     new_volumes = {v['target']: v for v in actual_service['volumes']}
-    old_volumes.pop('/opt/immich-raw-cleanup')
+    old_volumes.pop('/opt/immich-raw-cleanup', None)
+    old_volumes.pop('/var/lib/immich-log-preview', None)
     new_state = new_volumes.pop('/var/lib/immich-log-preview')
     assert new_state['source'] == '/mnt/cache/appdata/immich-custom/log-preview'
     assert old_volumes == new_volumes, '发现非本任务挂载变化，停止发布'
