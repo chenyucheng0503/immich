@@ -11,7 +11,8 @@
 - 按元数据 → 缩略图 → 视频顺序回读实际结果。三个媒体队列合计只允许本补偿放行一个任务；任一媒体队列有 active/waiting/delayed/paused 任务时整轮等待。
 - 放行前要求主服务已有限制（最多 2 核、4 GiB），FFmpeg 为单线程纯软件处理；整机一分钟负载低于 3、可用内存至少 4 GiB、温度低于 70°C。条件不满足时只报告，不探测原片或提交任务。硬限制负责约束正在执行的任务，准入检查负责停止新增；不代表能够排除硬件或内核故障。
 - 意图在 API 请求前原子落盘，任务结果未出现时退避重试，每阶段最多三次；持续失败记录在 state.json，不无限循环。`--retry <资产 ID>` 可在处理外部故障后手工重试。
-- 调度间隔五分钟，原生导入仍即时处理；本程序是补漏，不保证损坏、离线或无权限的原片可识别。
+- 调度间隔五分钟，手机直接上传仍走原生处理；本程序是补漏，不保证损坏、离线或无权限的原片可识别。
+- 提交任务前检查该资产的 Log 自动识别和处理缓存。损坏 JSON 以 `.corrupt-时间戳` 留存后重新生成；不修改单片覆盖配置或用户 LUT。
 - `--scan-libraries` 启用低负载发现：每个外部库最多每 15 分钟调用一次原生扫描 API；媒体、图库或旁车队列忙/暂停时等待，已有待补偿资产优先。适用于关闭持续实时监听的大图库；NAS 上使用此模式时关闭原生固定扫描，避免重复调度。手机直接上传仍走原生导入流程。
 
 ## 部署
@@ -26,7 +27,7 @@ Unraid 持久化 cron 文件 `/boot/config/plugins/dynamix/immich-video-recovery
 */5 * * * * test ! -f /mnt/cache/appdata/immich-custom/video-recovery/current/recover.py || /usr/bin/python3 /mnt/cache/appdata/immich-custom/video-recovery/current/recover.py --scan-libraries >> /mnt/cache/appdata/immich-custom/video-recovery/state/run.log 2>&1
 ```
 
-执行 `/usr/local/sbin/update_cron` 使其生效。查看 `state/summary.json` 或运行 `recover.py --status`。创建 `state/paused` 暂停补偿，删除此文件恢复；不暂停用户现有 Immich 队列。`--dry-run --settle-seconds 0` 只读预检，不提交任务或保存状态。
+执行 `bash /usr/local/sbin/update_cron` 使其生效（部分 Unraid 版本的脚本 shebang 不正确）。查看 `state/summary.json` 或运行 `recover.py --status`。创建 `state/paused` 暂停补偿，删除此文件恢复；不暂停用户现有 Immich 队列。`--dry-run --settle-seconds 0` 只读预检，不提交任务或保存状态。
 
 队列还应把 Valkey `/data` 挂载到持久化目录并使用 `appendonly yes`、`appendfsync everysec`。迁移前停生产者、等待后台任务结束、启用 AOF 并确认重写成功、SAVE，再停止 Valkey 复制其全部 `/data`；不能给空目录直接开启 AOF 而丢失旧队列。容器重建后核对所有队列长度、暂停状态和健康状态，再恢复生产者。
 
