@@ -501,7 +501,8 @@ export class MediaService extends BaseService {
     plan?: LogPlan,
     assetId?: string,
   ) {
-    if (!plan) {
+    const previousState = !plan && assetId ? await this.logPreviewRepository.getState(assetId) : undefined;
+    if (!plan && !previousState?.detection && !previousState?.video) {
       return this.mediaRepository.transcode(input, output, command);
     }
     const temporary = `${output}.${randomUUID()}${extname(output)}`;
@@ -509,10 +510,10 @@ export class MediaService extends BaseService {
       await this.mediaRepository.transcode(input, temporary, command);
       const currentConfig = await this.getConfig({ withCache: false });
       const currentPlan = await this.logPreviewRepository.resolve(
-        { id: assetId!, originalPath: input, cameraModel: plan.detection.model },
+        { id: assetId!, originalPath: input, cameraModel: plan?.detection.model },
         currentConfig.ffmpeg.logPreview,
       );
-      if (currentPlan?.revision !== plan.revision) {
+      if (currentPlan?.revision !== plan?.revision) {
         throw new Error('Log 规则或原片已变化，丢弃过时预览');
       }
       await fs.rename(temporary, output);
