@@ -78,6 +78,24 @@ class Native:
         self.mounts.sort(key=lambda m: len(m['Destination']), reverse=True)
         self.config = self.api('/system-config')
 
+    def safety(self):
+        reasons = []
+        if os.getloadavg()[0] >= 3.0:
+            reasons.append('整机一分钟负载达到 3，等待回落')
+        memory = dict(line.split(':', 1) for line in Path('/proc/meminfo').read_text().splitlines())
+        if int(memory['MemAvailable'].split()[0]) < 4 * 1024 * 1024:
+            reasons.append('整机可用内存不足 4 GiB')
+        for path in Path('/sys/class/thermal').glob('thermal_zone*/temp'):
+            if int(path.read_text().strip()) >= 70_000:
+                reasons.append('温度达到 70°C，等待冷却')
+        obj = self.command(['docker', 'inspect', 'immich_server'], as_json=True)[0]['HostConfig']
+        if not 0 < obj['NanoCpus'] <= 2_000_000_000 or not 0 < obj['Memory'] <= 4 * 1024**3:
+            reasons.append('Immich 未满足 2 核 / 4 GiB 硬限制')
+        ffmpeg = self.config['ffmpeg']
+        if ffmpeg['accel'] != 'disabled' or ffmpeg['accelDecode'] or ffmpeg['threads'] != 1:
+            reasons.append('自动恢复要求单线程纯软件处理')
+        return reasons
+
     @staticmethod
     def command(args, input=None, timeout=60, as_json=False):
         result = subprocess.run(args, input=input, text=True, capture_output=True, timeout=timeout)
@@ -143,9 +161,17 @@ class Native:
         self.api('/assets/jobs', {'name': STAGES[stage][1], 'assetIds': [asset_id]})
 
 
-def recover(native, state, save, now, settle=120, max_jobs=2, dry_run=False):
-    assets = native.assets()
+def recover(native, state, save, now, settle=120, max_jobs=1, dry_run=False):
+    reasons = native.safety()
+    if reasons:
+        return {'at': now, 'submitted': [], 'planned': [], 'states': {'blocked_resource': 1},
+                'blocked': reasons}
     queues = native.queues()
+    # 不能只限制单个队列：元数据、缩略图和转码共享 CPU、内存及磁盘。
+    if any(any(queues[q]['jobCounts'].get(k, 0) for k in ('active', 'waiting', 'delayed', 'paused'))
+           for q, _ in STAGES.values()):
+        return {'at': now, 'submitted': [], 'planned': [], 'states': {'waiting_media_pipeline': 1}}
+    assets = native.assets()
     records = state.setdefault('assets', {})
     actions = []
     live_ids = {a['id'] for a in assets}
@@ -211,7 +237,7 @@ def recover(native, state, save, now, settle=120, max_jobs=2, dry_run=False):
             record.update(status='failed' if attempts >= 3 else 'retry',
                           reason=stage + ' 任务结束后结果仍不完整', retryAt=now + 3600 * max(1, attempts))
             continue
-        if len(actions) >= max_jobs:
+        if len(actions) >= min(max_jobs, 1):
             continue
         if not dry_run:
             # 先落盘意图。进程退出或 HTTP 超时后仍能回读结果，不因重启遗忘。
@@ -236,7 +262,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--state-dir', default='/mnt/cache/appdata/immich-custom/video-recovery/state')
     parser.add_argument('--settle-seconds', type=int, default=120)
-    parser.add_argument('--max-jobs', type=int, default=2)
+    parser.add_argument('--max-jobs', type=int, default=1)
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--status', action='store_true')
     parser.add_argument('--retry', help='重新检查指定失败资产；不改变原片或资产可见性')

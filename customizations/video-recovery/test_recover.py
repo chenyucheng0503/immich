@@ -29,11 +29,13 @@ class Fake:
         self.valid = True
         self.required = True
         self.fp = 'same'
+        self.blocked = []
         self.q = {k: {'queueStatus': {'isPaused': False},
                       'jobCounts': {'active': 0, 'waiting': 0, 'failed': 0}}
                   for k in ['metadataExtraction', 'thumbnailGeneration', 'videoConversion']}
 
     def assets(self): return copy.deepcopy(self.rows)
+    def safety(self): return self.blocked
     def queues(self): return copy.deepcopy(self.q)
     def fingerprint(self, _): return self.fp
     def probe(self, _): return {'valid': self.valid, 'reason': 'no video stream'}
@@ -139,6 +141,23 @@ class RecoveryTests(unittest.TestCase):
     def test_dry_run_does_not_submit_or_save(self):
         f = Fake([asset()]); self.run_once(f, dry_run=True)
         self.assertFalse(f.sent); self.assertFalse(self.saves)
+
+    def test_any_busy_media_queue_blocks_other_stages(self):
+        f = Fake([asset()]); f.q['videoConversion']['jobCounts']['active'] = 1
+        self.run_once(f)
+        self.assertFalse(f.sent)
+        self.assertFalse(self.state['assets'])
+
+    def test_resource_gate_blocks_even_with_empty_queues(self):
+        f = Fake([asset()]); f.blocked = ['温度过高']
+        result = self.run_once(f)
+        self.assertEqual(result['blocked'], ['温度过高'])
+        self.assertFalse(f.sent)
+
+    def test_only_one_stage_globally_is_submitted_per_run(self):
+        a = asset(id='two'); complete_metadata(a)
+        f = Fake([asset(), a]); self.run_once(f, max_jobs=20)
+        self.assertEqual(f.sent, [('one', 'metadata')])
 
 
 if __name__ == '__main__':
