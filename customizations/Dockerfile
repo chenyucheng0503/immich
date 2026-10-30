@@ -8,9 +8,10 @@ COPY raw-cleanup/ /opt/immich-raw-cleanup/
 COPY build-manifest.json /opt/immich-custom/build-manifest.json
 
 ARG SOURCE_COMMIT
+ARG SOURCE_REF=master
 ENV IMMICH_REPOSITORY=chenyucheng0503/immich \
     IMMICH_REPOSITORY_URL=https://github.com/chenyucheng0503/immich \
-    IMMICH_SOURCE_REF=cyc_immich_log_lut_preview \
+    IMMICH_SOURCE_REF=${SOURCE_REF} \
     IMMICH_SOURCE_COMMIT=${SOURCE_COMMIT} \
     IMMICH_SOURCE_URL=https://github.com/chenyucheng0503/immich/commit/${SOURCE_COMMIT} \
     IMMICH_LOG_PREVIEW_DIR=/var/lib/immich-log-preview

@@ -1,6 +1,6 @@
 # Immich NAS 定制
 
-统一维护 NAS 上相对官方 Immich 的改造。上游固定为 `v3.2.4`；仓库地址为 `chenyucheng0503/immich`，NAS checkout 为 `/mnt/user/code/immich`。新的改造继续在这个仓库中新建独立分支/worktree。
+统一维护 NAS 上相对官方 Immich 的改造。上游固定为 `v3.2.4`；仓库地址为 `chenyucheng0503/immich`，NAS checkout 为 `/mnt/user/code/immich`，维护主线为 `master`。新的改造继续在这个仓库中新建独立分支/worktree。
 
 ## 改造范围
 
