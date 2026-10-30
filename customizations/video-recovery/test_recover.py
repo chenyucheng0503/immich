@@ -1,7 +1,9 @@
 import copy
 import unittest
 import tempfile
+import os
 from pathlib import Path
+from unittest.mock import patch
 
 from recover import recover, has_video_stream, quarantine_corrupt_cache
 
@@ -48,6 +50,22 @@ class Fake:
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_read_access_time_does_not_block_cache_recovery(self):
+        ident = 'afa4b921-abdf-4185-9f63-2904b9f7d302'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            folder = root / 'assets' / ident
+            folder.mkdir(parents=True)
+            (folder / 'detection.json').write_text('')
+            original_read = Path.read_text
+            def read_and_touch(path, *args, **kwargs):
+                value = original_read(path, *args, **kwargs)
+                stat = path.stat()
+                os.utime(path, ns=(stat.st_atime_ns + 1_000_000_000, stat.st_mtime_ns))
+                return value
+            with patch.object(Path, 'read_text', read_and_touch):
+                self.assertEqual(len(quarantine_corrupt_cache(root, ident)), 1)
+
     def test_quarantine_preserves_bad_cache_and_leaves_user_settings(self):
         ident = 'afa4b921-abdf-4185-9f63-2904b9f7d302'
         with tempfile.TemporaryDirectory() as directory:

@@ -96,7 +96,9 @@ def quarantine_corrupt_cache(root, asset_id):
         except FileNotFoundError:
             continue
         except (json.JSONDecodeError, UnicodeDecodeError):
-            if path.stat() != before:
+            current = path.stat()
+            if (current.st_ino, current.st_size, current.st_mtime_ns) != (
+                    before.st_ino, before.st_size, before.st_mtime_ns):
                 continue
             backup = path.with_name(name + '.corrupt-' + str(time.time_ns()))
             os.replace(path, backup)
