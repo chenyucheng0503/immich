@@ -10,6 +10,7 @@ from pathlib import Path
 import subprocess
 import time
 import urllib.request
+import uuid
 
 STAGES = {
     'metadata': ('metadataExtraction', 'refresh-metadata'),
@@ -82,13 +83,37 @@ def has_video_stream(probe):
     return False
 
 
+def quarantine_corrupt_cache(root, asset_id):
+    if str(uuid.UUID(asset_id)) != asset_id.lower():
+        raise ValueError('无效的资产 ID')
+    preserved = []
+    # 仅重建机器生成的缓存；单片覆盖和用户上传的 LUT 不在此范围内。
+    for name in ('detection.json', 'video.json', 'thumbnail.json'):
+        path = root / 'assets' / asset_id / name
+        try:
+            before = path.stat()
+            json.loads(path.read_text())
+        except FileNotFoundError:
+            continue
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            if path.stat() != before:
+                continue
+            backup = path.with_name(name + '.corrupt-' + str(time.time_ns()))
+            os.replace(path, backup)
+            preserved.append(str(backup))
+    return preserved
+
+
 class Native:
     def __init__(self):
         obj = self.command(['docker', 'inspect', 'immich_power_tools'], as_json=True)[0]
         env = dict(s.split('=', 1) for s in obj['Config']['Env'] if '=' in s)
         self.key = env['IMMICH_API_KEY']
-        self.mounts = self.command(['docker', 'inspect', '-f', '{{json .Mounts}}', 'immich_server'], as_json=True)
+        server = self.command(['docker', 'inspect', 'immich_server'], as_json=True)[0]
+        self.mounts = server['Mounts']
         self.mounts.sort(key=lambda m: len(m['Destination']), reverse=True)
+        server_env = dict(s.split('=', 1) for s in server['Config']['Env'] if '=' in s)
+        self.log_root = self.host_path(server_env.get('IMMICH_LOG_PREVIEW_DIR', '/data/log-preview'))
         self.config = self.api('/system-config')
 
     def safety(self):
@@ -171,6 +196,7 @@ class Native:
         return self.api('/jobs')
 
     def submit(self, asset_id, stage):
+        quarantine_corrupt_cache(self.log_root, asset_id)
         self.api('/assets/jobs', {'name': STAGES[stage][1], 'assetIds': [asset_id]})
 
     def libraries(self):

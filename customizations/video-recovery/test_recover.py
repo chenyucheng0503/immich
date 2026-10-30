@@ -1,7 +1,9 @@
 import copy
 import unittest
+import tempfile
+from pathlib import Path
 
-from recover import recover, has_video_stream
+from recover import recover, has_video_stream, quarantine_corrupt_cache
 
 
 def asset(**values):
@@ -46,6 +48,23 @@ class Fake:
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_quarantine_preserves_bad_cache_and_leaves_user_settings(self):
+        ident = 'afa4b921-abdf-4185-9f63-2904b9f7d302'
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            folder = root / 'assets' / ident
+            folder.mkdir(parents=True)
+            (folder / 'detection.json').write_text('')
+            (folder / 'video.json').write_text('{"revision":"valid"}')
+            (folder / 'override.json').write_text('{broken')
+            backups = quarantine_corrupt_cache(root, ident)
+            self.assertEqual(len(backups), 1)
+            self.assertEqual(Path(backups[0]).read_bytes(), b'')
+            self.assertFalse((folder / 'detection.json').exists())
+            self.assertEqual((folder / 'video.json').read_text(), '{"revision":"valid"}')
+            self.assertEqual((folder / 'override.json').read_text(), '{broken')
+            self.assertEqual(quarantine_corrupt_cache(root, ident), [])
+
     def setUp(self):
         self.state = {'enabledAt': 2_000_000_000, 'assets': {}}
         self.saves = []
